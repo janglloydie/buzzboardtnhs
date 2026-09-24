@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<quiz title="Solar System Warm-up">
+  <question time="20">
+    <text>Which planet is closest to the Sun?</text>
+    <choice correct="true">Mercury</choice>
+    <choice>Venus</choice>
+    <choice>Earth</choice>
+    <choice>Mars</choice>
+  </question>
+  <question time="15">
+    <text>How many moons does Earth have?</text>
+    <choice>None</choice>
+    <choice correct="true">One</choice>
+    <choice>Two</choice>
+  </question>
+  <question time="20">
+    <text>Which planet is famous for its rings?</text>
+    <choice>Jupiter</choice>
+    <choice correct="true">Saturn</choice>
+    <choice>Neptune</choice>
+    <choice>Mercury</choice>
+  </question>
+</quiz>

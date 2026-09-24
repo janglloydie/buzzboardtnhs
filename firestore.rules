@@ -1,0 +1,63 @@
+rules_version = '2';
+
+// Buzzboard security rules. Paste this whole file into
+// Firebase console > Firestore Database > Rules, then press Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ✏️ EDIT THIS LIST: the email addresses allowed to host games.
+    // Use lowercase and keep the quotes, e.g. ['ms.reyes@school.edu', 'mr.cruz@school.edu']
+    function teacherEmails() {
+      return ['teacher@example.com'];
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isTeacher() {
+      return signedIn()
+        && request.auth.token.firebase.sign_in_provider == 'password'
+        && request.auth.token.email.lower() in teacherEmails();
+    }
+    function validPlayer(d) {
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 16
+        && d.avatar is string && d.avatar.size() <= 8
+        && d.answers is map && d.answers.size() <= 200;
+    }
+
+    // Live games. Students can read the game they joined; only its host can change it.
+    match /games/{code} {
+      allow read: if signedIn();
+      allow create: if isTeacher() && request.resource.data.hostUid == request.auth.uid;
+      allow update, delete: if isTeacher() && resource.data.hostUid == request.auth.uid;
+
+      function isHost() {
+        return isTeacher()
+          && get(/databases/$(database)/documents/games/$(code)).data.hostUid == request.auth.uid;
+      }
+
+      // One document per student. Each student can only write their own,
+      // and can add answers but never change or remove one.
+      match /players/{uid} {
+        allow get: if signedIn() && (request.auth.uid == uid || isHost());
+        allow list: if isHost();
+        allow create: if signedIn() && request.auth.uid == uid
+          && exists(/databases/$(database)/documents/games/$(code))
+          && request.resource.data.keys().hasOnly(['name', 'avatar', 'joinedAt', 'answers'])
+          && validPlayer(request.resource.data)
+          && request.resource.data.answers.size() == 0;
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'avatar', 'answers'])
+          && validPlayer(request.resource.data)
+          && request.resource.data.answers.diff(resource.data.answers).changedKeys().size() == 0
+          && request.resource.data.answers.diff(resource.data.answers).removedKeys().size() == 0;
+        allow delete: if isHost();
+      }
+    }
+
+    // Each teacher's own quizzes and saved game history. Private to that teacher.
+    match /teachers/{teacherId}/{rest=**} {
+      allow read, write: if isTeacher() && request.auth.uid == teacherId;
+    }
+  }
+}
