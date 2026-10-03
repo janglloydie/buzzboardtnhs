@@ -1,5 +1,5 @@
 // Student page: join a game with a code and play from any device. No account needed.
-import { configured, auth, db, onAuthStateChanged, signInAnonymously, doc, getDoc, setDoc, updateDoc, onSnapshot,
+import { configured, auth, db, onAuthStateChanged, signInAnonymously, doc, getDoc, getDocFromServer, setDoc, updateDoc, onSnapshot, needsLongPolling,
   AVATARS, LETTERS, COLORS, esc, ls, clone, toast, rankList, errMsg, beep, confetti, notConfiguredHTML } from './common.js';
 
 const app = document.getElementById('app');
@@ -52,11 +52,28 @@ function startPlaying(code, name, avatar, answers) {
   P = { code, name, avatar, answers: { ...answers }, game: null, lastKey: null, tick: null, missing: false, confettiDone: false, qStart: 0 };
   S.view = 'player';
   if (history.replaceState) history.replaceState(null, '', location.pathname);
-  P.un = onSnapshot(doc(db, 'games', code), s => { if (!P) return; P.game = s.exists() ? s.data() : null; P.missing = !s.exists(); renderPlayer(); },
-    e => toast(errMsg(e)));
-  render();
+  P.un = onSnapshot(doc(db, 'games', code), s => { P && (P.lastSnap = Date.now()); applyGame(s); }, e => { console.error(e); refreshGame(); });
+  // Safety net: if no live update has arrived for a while, ask the server directly.
+  // On iPhone/iPad and in-app browsers this runs more often, since their connections are less reliable.
+  P.lastSnap = Date.now();
+  P.poll = setInterval(() => { if (P && !document.hidden && Date.now() - P.lastSnap > (needsLongPolling ? 4000 : 20000)) refreshGame(); }, 2000);
+  render(); if (needsLongPolling) refreshGame();
 }
-function stopPlaying() { if (!P) return; clearInterval(P.tick); P.un && P.un(); P = null; }
+function stopPlaying() { if (!P) return; clearInterval(P.tick); clearInterval(P.poll); P.un && P.un(); P = null; }
+// Accept a game snapshot unless it's older than what's already on screen (host stamps each change with rev).
+function applyGame(s) {
+  if (!P) return;
+  if (!s.exists()) { P.game = null; P.missing = true; renderPlayer(); return; }
+  const g = s.data(); if (P.game && (g.rev || 0) < (P.game.rev || 0)) return;
+  P.game = g; P.missing = false; renderPlayer();
+}
+async function refreshGame() {
+  if (!P || P.fetching) return; P.fetching = true; const code = P.code;
+  try { const s = await getDocFromServer(doc(db, 'games', code)); if (P && P.code === code) { P.lastSnap = Date.now(); applyGame(s); } }
+  catch {} finally { if (P) P.fetching = false; }
+}
+// Phones pause pages in the background; catch up the moment the page is visible again.
+['visibilitychange', 'pageshow', 'focus', 'online'].forEach(ev => (ev === 'visibilitychange' ? document : window).addEventListener(ev, () => { if (P && !document.hidden) refreshGame(); }));
 function renderPlayer() {
   if (!P) return; const g = P.game; const key = g ? g.status + ':' + g.qIndex : (P.missing ? 'gone' : 'none');
   if (key !== P.lastKey) { P.lastKey = key; fullPlayer(); }

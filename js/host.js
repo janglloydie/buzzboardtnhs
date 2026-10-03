@@ -208,7 +208,7 @@ function prepareQuiz(quiz, opts) {
 }
 function viewSetup() {
   const st = S.setup, q = S.quizzes.find(x => x.id === st.id);
-  return `<main class="wrap"><div class="topbar"><button class="btn small" data-act="goLibrary">Back</button><h1>Ready to host</h1></div>
+  return `<main class="wrap narrow"><div class="topbar"><button class="btn small" data-act="goLibrary">Back</button><h1>Ready to host</h1></div>
     <div class="card setup-card"><h2 style="margin-bottom:.2rem">${esc(q.title)}</h2>
       <p class="muted">${q.questions.length} question${q.questions.length === 1 ? '' : 's'}, about ${Math.ceil(q.questions.reduce((s, x) => s + x.time + 12, 0) / 60)} minutes</p>
       <label class="opt"><input type="checkbox" data-opt="shuffleQ" ${st.shuffleQ ? 'checked' : ''}><span><b>Shuffle the question order</b><br><span class="muted">Questions come up in a random order this game.</span></span></label>
@@ -376,7 +376,7 @@ function startHosting(code, questions, title) {
   render();
 }
 function stopHosting() { if (!H) return; clearInterval(H.tick); H.unG && H.unG(); H.unP && H.unP(); H = null; }
-function gameWrite(patch) { H.q = H.q.then(() => updateDoc(gameRef(H.code), patch)).catch(e => { console.error(e); toast(hErr(e)); }); return H.q; }
+function gameWrite(patch) { H.q = H.q.then(() => updateDoc(gameRef(H.code), { ...patch, rev: Date.now() })).catch(e => { console.error(e); toast(hErr(e)); }); return H.q; }
 function joinURL() { return new URL('./?code=' + H.code, location.href).href; }
 function renderHost(fromPlayers) {
   if (!H || S.view !== 'host') return; const g = H.game; const key = g ? g.status + ':' + g.qIndex : 'none';

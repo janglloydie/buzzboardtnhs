@@ -1,17 +1,26 @@
 // Shared setup and helpers for the student page (play.js) and host page (host.js).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./config.js";
 export { onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut, sendPasswordResetEmail }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-export { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, getDocs }
+export { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, onSnapshot, collection, getDocs }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export const configured = !!(firebaseConfig && firebaseConfig.apiKey && !/PASTE/.test(firebaseConfig.apiKey + firebaseConfig.projectId));
 export const fbApp = configured ? initializeApp(firebaseConfig) : null;
 export const auth = fbApp ? getAuth(fbApp) : null;
-export const db = fbApp ? getFirestore(fbApp) : null;
+// iPhones, iPads, and in-app browsers (Messenger, Facebook, Instagram) often block the streaming
+// connection Firestore uses for live updates, so updates only appear after a refresh. On those
+// devices we switch to long polling, which works everywhere.
+const ua = navigator.userAgent || '';
+export const isApple = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+export const inAppBrowser = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Line\/|MicroMessenger/i.test(ua);
+export const needsLongPolling = isApple || inAppBrowser;
+export const db = fbApp ? initializeFirestore(fbApp, needsLongPolling
+  ? { experimentalForceLongPolling: true }
+  : { experimentalAutoDetectLongPolling: true }) : null;
 
 export const AVATARS = ['🦊','🐸','🐙','🦉','🐢','🐝','🦄','🐧','🐼','🦖','🐳','🦔','🐨','🦁','🐯','🐰','🐲','🦩','🐞','🦜'];
 export const LETTERS = ['A','B','C','D'];
