@@ -213,6 +213,9 @@ td.num,th.num{text-align:right}
 .time-row{display:flex;align-items:center;gap:.6rem;margin:.6rem 0 0}
 .time-row span{margin:0}
 .time-in{width:6.5rem}
-.setup-card{max-width:640px}
+.wrap.narrow{max-width:720px}
+.setup-card{width:100%}
+.setup-card .opt{margin-bottom:.9rem}
+.setup-card .btn.big{display:block;margin:0 auto}
 .opt{display:flex;gap:.8rem;align-items:flex-start;font-weight:400;border:3px solid var(--line);border-radius:14px;padding:.8rem;background:var(--field);cursor:pointer}
 .opt input{width:1.4rem;height:1.4rem;margin-top:.15rem;flex:none;accent-color:var(--good)}
