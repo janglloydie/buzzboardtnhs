@@ -304,20 +304,28 @@ async function downloadPDF({ title, questions, results, createdAt, code }, btn) 
     const correctOf = r => (r.perQ || []).filter(a => a && a.ok).length;
     const avgScore = Math.round(ranked.reduce((s, r) => s + r.score, 0) / ranked.length);
     const avgPct = n ? Math.round(100 * ranked.reduce((s, r) => s + correctOf(r), 0) / (ranked.length * n)) : 0;
-    d.setFont('helvetica', 'bold'); d.setFontSize(18); d.text(d.splitTextToSize(pdfText(title) || 'Quiz results', W - 2 * M), M, 18);
+    // Header: every line is placed below the previous one, so long titles wrap without overlapping.
+    const lineH = pt => pt * 0.3528 * 1.25;   // font size in points -> line height in mm
+    let y = 12;
+    d.setFont('helvetica', 'bold'); d.setFontSize(18);
+    const titleLines = d.splitTextToSize(pdfText(title) || 'Quiz results', W - 2 * M);
+    y += lineH(18) * 0.8; d.text(titleLines, M, y, { lineHeightFactor: 1.25 }); y += lineH(18) * (titleLines.length - 1) + 3;
     d.setFont('helvetica', 'normal'); d.setFontSize(10); d.setTextColor(80);
-    d.text(`${fmtDate(createdAt)}   |   Game code ${code}   |   ${ranked.length} students   |   ${n} questions`, M, 26);
-    d.text(`Class average: ${avgScore} points, ${avgPct}% correct   |   Highest: ${ranked[0].score} points`, M, 31.5);
+    for (const line of [`${fmtDate(createdAt)}   |   Game code ${code}   |   ${ranked.length} students   |   ${n} questions`,
+      `Class average: ${avgScore} points, ${avgPct}% correct   |   Highest: ${ranked[0].score} points`]) {
+      const parts = d.splitTextToSize(line, W - 2 * M); y += lineH(10); d.text(parts, M, y, { lineHeightFactor: 1.25 }); y += lineH(10) * (parts.length - 1);
+    }
     d.setTextColor(0);
+    y += 9;
     const common = { margin: { left: M, right: M, top: 16, bottom: 16 }, showHead: 'everyPage', rowPageBreak: 'avoid', theme: 'grid',
       styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 1.8, lineColor: [200, 200, 200], lineWidth: .2, overflow: 'linebreak' },
       headStyles: { fillColor: [29, 41, 81], textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [247, 247, 242] } };
-    d.setFont('helvetica', 'bold'); d.setFontSize(13); d.text('Scores', M, 41);
-    d.autoTable({ ...common, startY: 44,
+    d.setFont('helvetica', 'bold'); d.setFontSize(13); d.text('Scores', M, y);
+    d.autoTable({ ...common, startY: y + 3,
       head: [['Rank', 'No.', 'Student', 'Score', 'Correct', '%']],
       body: ranked.map((r, i) => { const c = correctOf(r); return [i + 1, nos[r.id], pdfText(r.name) || '(no name)', r.score, `${c} / ${n}`, n ? Math.round(100 * c / n) + '%' : '']; }),
       columnStyles: { 0: { halign: 'right', cellWidth: 14 }, 1: { cellWidth: 16 }, 3: { halign: 'right', cellWidth: 20 }, 4: { halign: 'right', cellWidth: 22 }, 5: { halign: 'right', cellWidth: 16 } } });
-    let y = d.lastAutoTable.finalY + 10; if (y > d.internal.pageSize.getHeight() - 40) { d.addPage(); y = 20; }
+    y = d.lastAutoTable.finalY + 10; if (y > d.internal.pageSize.getHeight() - 40) { d.addPage(); y = 20; }
     d.setFont('helvetica', 'bold'); d.setFontSize(13); d.text('Item analysis', M, y);
     d.autoTable({ ...common, startY: y + 3,
       head: [['#', 'Question', 'Key', 'A', 'B', 'C', 'D', 'No ans.', '% correct']],
@@ -329,9 +337,12 @@ async function downloadPDF({ title, questions, results, createdAt, code }, btn) 
     y = d.lastAutoTable.finalY + 6; if (y > d.internal.pageSize.getHeight() - 20) { d.addPage(); y = 20; }
     d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
     d.text(d.splitTextToSize('Columns A to D show how many students picked each choice; the correct one is in green. No. matches the student numbers in the Item Analyzer file.', W - 2 * M), M, y);
+    d.setFontSize(8.5);
+    let footTitle = pdfText(title); const maxW = W - 2 * M - 30;
+    if (d.getTextWidth(footTitle) > maxW) { while (footTitle && d.getTextWidth(footTitle + '...') > maxW) footTitle = footTitle.replace(/\s*\S+$/, ''); footTitle += '...'; }
     const pages = d.getNumberOfPages();
     for (let p = 1; p <= pages; p++) { d.setPage(p); d.setFontSize(8.5); d.setTextColor(120);
-      d.text(pdfText(title).slice(0, 70), M, d.internal.pageSize.getHeight() - 8); d.text(`Page ${p} of ${pages}`, W - M, d.internal.pageSize.getHeight() - 8, { align: 'right' }); }
+      d.text(footTitle, M, d.internal.pageSize.getHeight() - 8); d.text(`Page ${p} of ${pages}`, W - M, d.internal.pageSize.getHeight() - 8, { align: 'right' }); }
     d.save(`${safeName(title)}-results.pdf`);
   } catch (e) { console.error(e); toast('Couldn’t make the PDF. Try again.'); }
   if (btn) { btn.disabled = false; btn.textContent = label; }
