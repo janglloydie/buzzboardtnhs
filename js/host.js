@@ -88,7 +88,7 @@ function toXML(q) {
 /* ---------- views ---------- */
 function render() {
   if (S.view === 'host') return fullHost();
-  const v = { login: viewLogin, library: viewLibrary, import: viewImport, history: viewHistory, detail: viewDetail }[S.view] || viewLogin;
+  const v = { login: viewLogin, library: viewLibrary, import: viewImport, history: viewHistory, detail: viewDetail, editor: viewEditor, setup: viewSetup }[S.view] || viewLogin;
   app.innerHTML = v() + modalHTML();
 }
 function modalHTML() {
@@ -117,15 +117,16 @@ function libTop(title, extra = '') {
 function viewLibrary() {
   const qs = S.quizzes;
   const list = qs == null ? `<p class="muted">Loading your quizzes…</p>` : !qs.length ? `<div class="card empty"><div class="emoji">📥</div>
-    <h2>Import your first quiz</h2><p>In Buzzboard on Claude, open a quiz, tap View XML, copy it, and paste it here. Any XML in the same format works too.</p>
-    <div class="row" style="justify-content:center"><button class="btn primary" data-act="goImport">Import XML</button></div></div>`
+    <h2>Add your first quiz</h2><p>Type the questions in yourself, or import XML (from Buzzboard on Claude, tap View XML on a quiz and paste it here).</p>
+    <div class="row" style="justify-content:center"><button class="btn primary" data-act="goImport">Import XML</button><button class="btn" data-act="newQuiz">Write a quiz</button></div></div>`
     : `<div class="quiz-list">${qs.map(q => `<div class="card quiz-item"><div style="flex:1;min-width:12rem"><h3>${esc(q.title)}</h3>
       <p class="muted" style="margin:0">${q.questions.length} question${q.questions.length === 1 ? '' : 's'}</p></div>
       <div class="row"><button class="btn primary" data-act="host" data-id="${q.id}">Host live</button>
+      <button class="btn small" data-act="editQuiz" data-id="${q.id}">Edit</button>
       <button class="btn small" data-act="exportQuiz" data-id="${q.id}">View XML</button>
       <button class="btn small danger" data-act="delQuiz" data-id="${q.id}">${S.confirm === 'q:' + q.id ? 'Tap again to delete' : 'Delete'}</button></div></div>`).join('')}</div>`;
   return `<main class="wrap"><div class="topbar"><h1>My quizzes</h1><span class="spacer"></span>
-    <button class="btn small" data-act="goHistory">Past games</button><button class="btn small primary" data-act="goImport">Import XML</button>
+    <button class="btn small" data-act="goHistory">Past games</button><button class="btn small" data-act="goImport">Import XML</button><button class="btn small primary" data-act="newQuiz">New quiz</button>
     <button class="btn small" data-act="logout">Sign out</button></div>
     <p class="muted">Signed in as ${esc(S.user.email)}</p>${list}</main>`;
 }
@@ -144,7 +145,8 @@ function viewImport() {
       ${q.questions.slice(0, 5).map((qq, i) => `<div class="preview-q"><b>${i + 1}. ${esc(qq.text)}</b> <span class="muted">(${qq.time}s)</span><br>
         ${qq.choices.map((c, j) => `<span class="${j === qq.correct ? 'ok-choice' : ''}">${LETTERS[j]}. ${esc(c)}${j === qq.correct ? ' ✓' : ''}</span>`).join(' &nbsp; ')}</div>`).join('')}
       ${q.questions.length > 5 ? `<p class="muted">and ${q.questions.length - 5} more…</p>` : ''}`).join('')}
-    ${r.quizzes.length ? `<div class="row" style="margin-top:1rem"><button class="btn primary" data-act="saveImport">Save ${r.quizzes.length > 1 ? r.quizzes.length + ' quizzes' : 'quiz'}${r.errors.length ? ' (skip broken questions)' : ''}</button></div>` : ''}
+    ${r.quizzes.length ? `<div class="row" style="margin-top:1rem"><button class="btn primary" data-act="saveImport">Save ${r.quizzes.length > 1 ? r.quizzes.length + ' quizzes' : 'quiz'}${r.errors.length ? ' (skip broken questions)' : ''}</button>
+      ${r.quizzes.length === 1 ? `<button class="btn" data-act="editImport">Review and edit first</button>` : `<span class="muted">After saving, use Edit on each quiz to make changes.</span>`}</div>` : ''}
   </div>` : ''}
   <details class="card" style="margin-top:1.25rem"><summary>XML format guide</summary>
     <p style="margin-top:.8rem">Wrap everything in <code>&lt;quiz title="…"&gt;</code>. Each <code>&lt;question&gt;</code> has a <code>&lt;text&gt;</code> and 2 to 4 <code>&lt;choice&gt;</code> elements; add <code>correct="true"</code> to the right one. The optional <code>time</code> attribute sets seconds (5 to 120, default 20).</p>
@@ -152,6 +154,70 @@ function viewImport() {
     <pre class="mono" style="overflow-x:auto;background:var(--field);border:3px solid var(--line);border-radius:12px;padding:.8rem">${esc(TEMPLATE)}</pre>
   </details></main>`;
 }
+
+/* ---------- quiz editor ---------- */
+const blankQ = () => ({ text: '', choices: ['', '', '', ''], correct: 0, time: 20 });
+const padChoices = q => { const ch = [...q.choices]; while (ch.length < 4) ch.push(''); return { ...q, choices: ch }; };
+function openEditor(quiz, fromImport = false) {
+  const e = clone(quiz); e.questions = (e.questions && e.questions.length ? e.questions : [blankQ()]).map(padChoices);
+  S.edit = e; S.editFromImport = fromImport; S.editErr = ''; S.view = 'editor'; render(); window.scrollTo(0, 0);
+}
+function viewEditor() {
+  const e = S.edit, n = e.questions.length;
+  return `<main class="wrap"><div class="topbar"><button class="btn small" data-act="cancelEdit">Cancel</button><h1>${e.id ? 'Edit quiz' : S.editFromImport ? 'Review imported quiz' : 'New quiz'}</h1><span class="spacer"></span>
+    <button class="btn primary" data-act="saveQuiz">Save quiz</button></div>
+    <div class="card qcard"><label style="margin:0"><span>Quiz title</span><input data-ed="title" maxlength="80" placeholder="e.g. Java data types review" value="${esc(e.title)}"></label>
+      <p class="muted" style="margin:.6rem 0 0">${n} question${n === 1 ? '' : 's'}. Fill in 2 to 4 choices per question and tick the right one.</p></div>
+    ${e.questions.map((q, i) => `<div class="card qcard" id="q${i}"><div class="qhead"><span class="qnum-badge">${i + 1}</span><h3>Question</h3><span class="spacer"></span>
+      <button class="btn small" data-act="moveQ" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move question ${i + 1} up">↑</button>
+      <button class="btn small" data-act="moveQ" data-i="${i}" data-d="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Move question ${i + 1} down">↓</button>
+      <button class="btn small" data-act="dupQ" data-i="${i}">Duplicate</button>
+      <button class="btn small danger" data-act="rmQ" data-i="${i}" ${n < 2 ? 'disabled' : ''}>Remove</button></div>
+      <label><span>Question text</span><textarea data-ed="text" data-i="${i}" rows="2" maxlength="300" placeholder="Type the question">${esc(q.text)}</textarea></label>
+      ${q.choices.map((c, j) => `<div class="choice-edit"><span class="lt" style="background:${COLORS[j]}">${LETTERS[j]}</span>
+        <input data-ed="choice" data-i="${i}" data-j="${j}" maxlength="120" placeholder="${j < 2 ? 'Answer choice' : 'Optional choice'}" value="${esc(c)}" aria-label="Question ${i + 1}, choice ${LETTERS[j]}">
+        <label class="cor"><input type="radio" name="cor${i}" data-ed="correct" data-i="${i}" data-j="${j}" ${q.correct === j ? 'checked' : ''}>Right</label></div>`).join('')}
+      <label class="time-row"><span>Time limit (seconds)</span><input type="number" class="time-in" min="5" max="120" step="1" data-ed="time" data-i="${i}" value="${q.time}"></label>
+    </div>`).join('')}
+    ${S.editErr ? `<p class="err" role="alert">${esc(S.editErr)}</p>` : ''}
+    <div class="row"><button class="btn" data-act="addQ">Add a question</button><span class="spacer"></span><button class="btn primary" data-act="saveQuiz">Save quiz</button></div></main>`;
+}
+function validateEditor() {
+  const e = S.edit, title = (e.title || '').trim(); if (!title) return { err: 'Give the quiz a title.' };
+  const qs = [];
+  for (let i = 0; i < e.questions.length; i++) {
+    const q = e.questions[i], text = (q.text || '').trim(), at = i;
+    if (!text) return { err: `Question ${i + 1} needs some text.`, at };
+    if (!(q.choices[q.correct] || '').trim()) return { err: `Question ${i + 1}: the choice marked Right is empty.`, at };
+    const keep = q.choices.map((c, j) => ({ c: (c || '').trim(), j })).filter(x => x.c);
+    if (keep.length < 2) return { err: `Question ${i + 1} needs at least two choices.`, at };
+    let t = parseInt(q.time, 10); if (!Number.isFinite(t)) t = 20; t = Math.max(5, Math.min(120, t));
+    qs.push({ text: text.slice(0, 300), choices: keep.map(x => x.c.slice(0, 120)), correct: keep.findIndex(x => x.j === q.correct), time: t });
+  }
+  return { quiz: { id: e.id || null, title: title.slice(0, 80), questions: qs } };
+}
+
+/* ---------- pre-game options ---------- */
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function prepareQuiz(quiz, opts) {
+  let questions = clone(quiz.questions);
+  if (opts.shuffleQ) questions = shuffle(questions);
+  if (opts.shuffleA) questions = questions.map(q => { const order = shuffle(q.choices.map((_, i) => i));
+    return { ...q, choices: order.map(i => q.choices[i]), correct: order.indexOf(q.correct) }; });
+  return { title: quiz.title, questions };
+}
+function viewSetup() {
+  const st = S.setup, q = S.quizzes.find(x => x.id === st.id);
+  return `<main class="wrap"><div class="topbar"><button class="btn small" data-act="goLibrary">Back</button><h1>Ready to host</h1></div>
+    <div class="card setup-card"><h2 style="margin-bottom:.2rem">${esc(q.title)}</h2>
+      <p class="muted">${q.questions.length} question${q.questions.length === 1 ? '' : 's'}, about ${Math.ceil(q.questions.reduce((s, x) => s + x.time + 12, 0) / 60)} minutes</p>
+      <label class="opt"><input type="checkbox" data-opt="shuffleQ" ${st.shuffleQ ? 'checked' : ''}><span><b>Shuffle the question order</b><br><span class="muted">Questions come up in a random order this game.</span></span></label>
+      <label class="opt"><input type="checkbox" data-opt="shuffleA" ${st.shuffleA ? 'checked' : ''}><span><b>Shuffle the answer choices</b><br><span class="muted">Choices are mixed up within each question. Avoid this if a quiz uses choices like “All of the above.”</span></span></label>
+      <p class="muted" style="margin:.4rem 0 1rem">Your saved quiz isn't changed. Scores for this game are saved in the order it was played.</p>
+      <button class="btn primary big" data-act="startHost" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Starting…' : 'Open the lobby'}</button>
+    </div></main>`;
+}
+
 function viewHistory() {
   const gs = S.games;
   return `<main class="wrap"><div class="topbar"><button class="btn small" data-act="goLibrary">Back</button><h1>Past games</h1></div>
@@ -166,28 +232,115 @@ function viewDetail() {
   return `<main class="wrap"><div class="topbar"><button class="btn small" data-act="goHistory">Back</button><h1>${esc(g.title)}</h1></div>
     <p class="muted">${fmtDate(g.createdAt)}, code ${fmtCode(g.id)}</p>${resultsHTML(g.questions, g.results)}</main>`;
 }
+// Student numbers for the Item Analyzer file: alphabetical by name, 00001, 00002, ...
+function studentNos(results) {
+  const ids = Object.entries(results || {}).sort(([a, x], [b, y]) => String(x.name).localeCompare(String(y.name), undefined, { sensitivity: 'base' }) || a.localeCompare(b)).map(([id]) => id);
+  return Object.fromEntries(ids.map((id, i) => [id, String(i + 1).padStart(5, '0')]));
+}
+function itemStats(questions, results) {
+  const ranked = rankList(results);
+  return questions.map((q, i) => { const counts = [0, 0, 0, 0], none = { n: 0 }; let ok = 0;
+    for (const r of ranked) { const a = (r.perQ || [])[i]; if (a && a.c != null && a.c >= 0 && a.c < 4) { counts[a.c]++; if (a.ok) ok++; } else none.n++; }
+    const tot = ranked.length; return { q, counts, none: none.n, ok, tot, pct: tot ? Math.round(100 * ok / tot) : 0 }; });
+}
 function resultsHTML(questions, results) {
-  const ranked = rankList(results), n = questions.length;
+  const ranked = rankList(results), n = questions.length, nos = studentNos(results);
   if (!ranked.length) return `<div class="card empty"><p>Nobody played this one.</p></div>`;
-  const acc = questions.map((q, i) => { let ok = 0, tot = 0; for (const r of ranked) { const a = (r.perQ || [])[i]; if (a) { tot++; if (a.ok) ok++; } } return { q, ok, tot }; });
-  return `<div class="section"><div class="row"><h2 style="margin:0">Scores</h2><span class="spacer"></span><button class="btn small" data-act="csv">Download CSV</button></div>
-    <div class="tbl-wrap" style="margin-top:.8rem"><table><thead><tr><th class="num">#</th><th>Player</th><th class="num">Score</th><th class="num">Correct</th></tr></thead><tbody>
-    ${ranked.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.avatar)} ${esc(r.name)}</td><td class="num">${r.score}</td><td class="num">${(r.perQ || []).filter(a => a && a.ok).length} / ${n}</td></tr>`).join('')}
-    </tbody></table></div></div>
+  const acc = itemStats(questions, results);
+  return `<div class="section"><div class="row"><h2 style="margin:0">Scores</h2><span class="spacer"></span>
+    <button class="btn small" data-act="pdf">Download PDF</button><button class="btn small" data-act="csv">Download CSV</button>
+    <button class="btn small" data-act="iaf" title="Answer file for the Item Analyzer">Item Analyzer file</button></div>
+    <div class="tbl-wrap" style="margin-top:.8rem"><table><thead><tr><th class="num">Rank</th><th class="num">No.</th><th>Player</th><th class="num">Score</th><th class="num">Correct</th></tr></thead><tbody>
+    ${ranked.map((r, i) => `<tr><td class="num">${i + 1}</td><td class="num muted">${nos[r.id]}</td><td>${esc(r.avatar)} ${esc(r.name)}</td><td class="num">${r.score}</td><td class="num">${(r.perQ || []).filter(a => a && a.ok).length} / ${n}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="muted" style="margin-top:.5rem">No. is each student's number in the Item Analyzer file (alphabetical by nickname).</p></div>
     <div class="section"><h2>How each question went</h2><div class="card acc-list">
-    ${acc.map((a, i) => { const pct = a.tot ? Math.round(100 * a.ok / a.tot) : 0; return `<div class="acc"><div><b>${i + 1}.</b> ${esc(a.q.text)} <span class="muted">(${LETTERS[a.q.correct]}: ${esc(a.q.choices[a.q.correct])})</span></div>
-      <div class="bar" role="img" aria-label="${pct}% correct"><i style="width:${pct}%"></i></div><div style="text-align:right;font-weight:700">${a.tot ? pct + '%' : 'n/a'}</div></div>`; }).join('')}
+    ${acc.map((a, i) => `<div class="acc"><div><b>${i + 1}.</b> ${esc(a.q.text)} <span class="muted">(${LETTERS[a.q.correct]}: ${esc(a.q.choices[a.q.correct])})</span></div>
+      <div class="bar" role="img" aria-label="${a.pct}% correct"><i style="width:${a.pct}%"></i></div><div style="text-align:right;font-weight:700">${a.tot ? a.pct + '%' : 'n/a'}</div></div>`).join('')}
     </div></div>`;
 }
-function downloadCSV(title, questions, results) {
+const safeName = t => (t || 'quiz').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'quiz';
+function saveBlob(filename, blob) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function downloadCSV({ title, questions, results }) {
   const q = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const head = ['Rank', 'Name', 'Score', 'Correct', ...questions.map((_, i) => `Q${i + 1} answer`), ...questions.map((_, i) => `Q${i + 1} points`)];
-  const rows = rankList(results).map((r, i) => { const pq = r.perQ || []; return [i + 1, r.name, r.score, pq.filter(a => a && a.ok).length,
+  const nos = studentNos(results);
+  const head = ['Rank', 'No.', 'Name', 'Score', 'Correct', ...questions.map((_, i) => `Q${i + 1} answer`), ...questions.map((_, i) => `Q${i + 1} points`)];
+  const rows = rankList(results).map((r, i) => { const pq = r.perQ || []; return [i + 1, nos[r.id], r.name, r.score, pq.filter(a => a && a.ok).length,
     ...questions.map((_, k) => pq[k] && pq[k].c != null ? LETTERS[pq[k].c] : ''), ...questions.map((_, k) => pq[k] ? pq[k].pts : 0)]; });
-  const csv = '\ufeff' + [head, ...rows].map(r => r.map(q).join(',')).join('\n');
-  const name = (title || 'quiz').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'quiz';
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `${name}-scores.csv`;
-  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  saveBlob(`${safeName(title)}-scores.csv`, new Blob(['\ufeff' + [head, ...rows].map(r => r.map(q).join(',')).join('\r\n')], { type: 'text/csv' }));
+}
+// Item Analyzer format: line 1 = 00000 + answer key, line 2 = 00000 + a 1 per item,
+// then one line per student: 5-digit number + their letters (E = no answer). CRLF line endings.
+function buildIAF(questions, results) {
+  const nos = studentNos(results), byNo = Object.entries(nos).sort((a, b) => a[1].localeCompare(b[1]));
+  const lines = ['00000' + questions.map(q => LETTERS[q.correct]).join(''), '00000' + '1'.repeat(questions.length)];
+  for (const [id, no] of byNo) { const pq = (results[id] && results[id].perQ) || [];
+    lines.push(no + questions.map((_, k) => pq[k] && pq[k].c != null && pq[k].c >= 0 && pq[k].c < 4 ? LETTERS[pq[k].c] : 'E').join('')); }
+  return lines.join('\r\n') + '\r\n';
+}
+function downloadIAF({ title, questions, results }) {
+  if (!Object.keys(results || {}).length) { toast('Nobody played this game, so there are no answers to export.'); return; }
+  saveBlob(`${safeName(title)} IAF.txt`, new Blob([buildIAF(questions, results)], { type: 'text/plain' }));
+}
+
+/* PDF: built with jsPDF + AutoTable, which paginate long tables and repeat headers on every page. */
+const PDF_LIBS = ['https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js', 'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js'];
+const loadScript = src => new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res();
+  const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load')); document.head.appendChild(s); });
+async function loadPDFLibs() { if (!(window.jspdf && window.jspdf.jsPDF)) await loadScript(PDF_LIBS[0]); if (!(window.jspdf.jsPDF.API.autoTable)) await loadScript(PDF_LIBS[1]); }
+// Built-in PDF fonts only cover Western characters, so emoji and other symbols are dropped.
+const pdfText = s => String(s ?? '').replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...')
+  .replace(/[^\x20-\x7E\xA0-\xFF]/g, '').replace(/\s+/g, ' ').trim();
+async function downloadPDF({ title, questions, results, createdAt, code }, btn) {
+  const ranked = rankList(results); if (!ranked.length) { toast('Nobody played this game, so there are no results to export.'); return; }
+  const label = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = 'Making PDF…'; }
+  try { await loadPDFLibs(); } catch { toast('Couldn’t load the PDF tool. Check the internet connection and try again.'); if (btn) { btn.disabled = false; btn.textContent = label; } return; }
+  try {
+    const { jsPDF } = window.jspdf, d = new jsPDF({ unit: 'mm', format: 'a4' }), W = d.internal.pageSize.getWidth(), M = 14;
+    const nos = studentNos(results), n = questions.length, stats = itemStats(questions, results);
+    const correctOf = r => (r.perQ || []).filter(a => a && a.ok).length;
+    const avgScore = Math.round(ranked.reduce((s, r) => s + r.score, 0) / ranked.length);
+    const avgPct = n ? Math.round(100 * ranked.reduce((s, r) => s + correctOf(r), 0) / (ranked.length * n)) : 0;
+    d.setFont('helvetica', 'bold'); d.setFontSize(18); d.text(d.splitTextToSize(pdfText(title) || 'Quiz results', W - 2 * M), M, 18);
+    d.setFont('helvetica', 'normal'); d.setFontSize(10); d.setTextColor(80);
+    d.text(`${fmtDate(createdAt)}   |   Game code ${code}   |   ${ranked.length} students   |   ${n} questions`, M, 26);
+    d.text(`Class average: ${avgScore} points, ${avgPct}% correct   |   Highest: ${ranked[0].score} points`, M, 31.5);
+    d.setTextColor(0);
+    const common = { margin: { left: M, right: M, top: 16, bottom: 16 }, showHead: 'everyPage', rowPageBreak: 'avoid', theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 1.8, lineColor: [200, 200, 200], lineWidth: .2, overflow: 'linebreak' },
+      headStyles: { fillColor: [29, 41, 81], textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [247, 247, 242] } };
+    d.setFont('helvetica', 'bold'); d.setFontSize(13); d.text('Scores', M, 41);
+    d.autoTable({ ...common, startY: 44,
+      head: [['Rank', 'No.', 'Student', 'Score', 'Correct', '%']],
+      body: ranked.map((r, i) => { const c = correctOf(r); return [i + 1, nos[r.id], pdfText(r.name) || '(no name)', r.score, `${c} / ${n}`, n ? Math.round(100 * c / n) + '%' : '']; }),
+      columnStyles: { 0: { halign: 'right', cellWidth: 14 }, 1: { cellWidth: 16 }, 3: { halign: 'right', cellWidth: 20 }, 4: { halign: 'right', cellWidth: 22 }, 5: { halign: 'right', cellWidth: 16 } } });
+    let y = d.lastAutoTable.finalY + 10; if (y > d.internal.pageSize.getHeight() - 40) { d.addPage(); y = 20; }
+    d.setFont('helvetica', 'bold'); d.setFontSize(13); d.text('Item analysis', M, y);
+    d.autoTable({ ...common, startY: y + 3,
+      head: [['#', 'Question', 'Key', 'A', 'B', 'C', 'D', 'No ans.', '% correct']],
+      body: stats.map((s, i) => [i + 1, pdfText(s.q.text), LETTERS[s.q.correct], ...[0, 1, 2, 3].map(k => k < s.q.choices.length ? s.counts[k] : '-'), s.none, s.pct + '%']),
+      columnStyles: { 0: { halign: 'right', cellWidth: 9 }, 2: { halign: 'center', cellWidth: 11, fontStyle: 'bold' },
+        3: { halign: 'center', cellWidth: 10 }, 4: { halign: 'center', cellWidth: 10 }, 5: { halign: 'center', cellWidth: 10 }, 6: { halign: 'center', cellWidth: 10 },
+        7: { halign: 'center', cellWidth: 16 }, 8: { halign: 'right', cellWidth: 19 } },
+      didParseCell: c => { if (c.section === 'body' && c.column.index >= 3 && c.column.index <= 6 && c.column.index - 3 === questions[c.row.index].correct) { c.cell.styles.fontStyle = 'bold'; c.cell.styles.textColor = [18, 131, 78]; } } });
+    y = d.lastAutoTable.finalY + 6; if (y > d.internal.pageSize.getHeight() - 20) { d.addPage(); y = 20; }
+    d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(90);
+    d.text(d.splitTextToSize('Columns A to D show how many students picked each choice; the correct one is in green. No. matches the student numbers in the Item Analyzer file.', W - 2 * M), M, y);
+    const pages = d.getNumberOfPages();
+    for (let p = 1; p <= pages; p++) { d.setPage(p); d.setFontSize(8.5); d.setTextColor(120);
+      d.text(pdfText(title).slice(0, 70), M, d.internal.pageSize.getHeight() - 8); d.text(`Page ${p} of ${pages}`, W - M, d.internal.pageSize.getHeight() - 8, { align: 'right' }); }
+    d.save(`${safeName(title)}-results.pdf`);
+  } catch (e) { console.error(e); toast('Couldn’t make the PDF. Try again.'); }
+  if (btn) { btn.disabled = false; btn.textContent = label; }
+}
+
+function exportCtx() {
+  if (S.view === 'detail' && S.detail) return { title: S.detail.title, questions: S.detail.questions, results: S.detail.results || {}, createdAt: S.detail.createdAt, code: S.detail.id };
+  if (H && H.game) return { title: H.title, questions: H.questions, results: H.game.results || {}, createdAt: H.game.createdAt, code: H.code };
+  return null;
 }
 
 /* ---------- live hosting ---------- */
@@ -358,8 +511,27 @@ const A = {
   async saveImport() { const r = S.importResult;
     try { for (const q of r.quizzes) await Priv.saveQuiz(q); toast(r.quizzes.length > 1 ? `${r.quizzes.length} quizzes saved` : 'Quiz saved'); S.importText = ''; S.importResult = null; goLibrary(); }
     catch (e) { toast(hErr(e)); } },
-  async host(el) { const q = S.quizzes.find(x => x.id === el.dataset.id); if (!q) return; el.disabled = true; el.textContent = 'Starting…';
-    try { await hostQuiz(q); } catch (e) { toast(e && e.message === 'code' ? 'Couldn’t find a free game code. Try again.' : hErr(e)); el.disabled = false; el.textContent = 'Host live'; } },
+  host(el) { const q = S.quizzes.find(x => x.id === el.dataset.id); if (!q) return; const o = ls.get('bb:shuffle', {});
+    S.setup = { id: q.id, shuffleQ: !!o.shuffleQ, shuffleA: !!o.shuffleA }; S.view = 'setup'; render(); },
+  async startHost() { const q = S.quizzes.find(x => x.id === S.setup.id); if (!q || S.busy) return;
+    ls.set('bb:shuffle', { shuffleQ: S.setup.shuffleQ, shuffleA: S.setup.shuffleA }); S.busy = true; render();
+    try { await hostQuiz(prepareQuiz(q, S.setup)); } catch (e) { toast(e && e.message === 'code' ? 'Couldn’t find a free game code. Try again.' : hErr(e)); }
+    S.busy = false; if (S.view === 'setup') render(); },
+  newQuiz() { openEditor({ id: null, title: '', questions: [blankQ()] }); },
+  editQuiz(el) { const q = S.quizzes.find(x => x.id === el.dataset.id); if (q) openEditor(q); },
+  editImport() { const q = S.importResult && S.importResult.quizzes[0]; if (q) openEditor({ id: null, ...q }, true); },
+  cancelEdit() { if (S.editFromImport) { S.view = 'import'; render(); } else goLibrary(); },
+  addQ() { const last = S.edit.questions[S.edit.questions.length - 1]; const q = blankQ(); if (last) q.time = parseInt(last.time, 10) || 20;
+    S.edit.questions.push(q); render(); const t = document.querySelectorAll('textarea[data-ed="text"]'); const el = t[t.length - 1]; if (el) { el.focus(); el.scrollIntoView({ block: 'center' }); } },
+  rmQ(el) { S.edit.questions.splice(+el.dataset.i, 1); render(); },
+  dupQ(el) { const i = +el.dataset.i; S.edit.questions.splice(i + 1, 0, clone(S.edit.questions[i])); render(); document.getElementById('q' + (i + 1))?.scrollIntoView({ block: 'center' }); },
+  moveQ(el) { const i = +el.dataset.i, j = i + (+el.dataset.d), qs = S.edit.questions; if (j < 0 || j >= qs.length) return; [qs[i], qs[j]] = [qs[j], qs[i]]; render();
+    const b = document.querySelector(`#q${j} [data-act="moveQ"][data-d="${el.dataset.d}"]`) || document.getElementById('q' + j); b && b.focus(); },
+  async saveQuiz() { const r = validateEditor();
+    if (r.err) { S.editErr = r.err; render(); document.getElementById('q' + r.at)?.scrollIntoView({ block: 'center' }); return; }
+    if (S.busy) return; S.busy = true;
+    try { await Priv.saveQuiz(r.quiz); toast('Quiz saved'); if (S.editFromImport) { S.importText = ''; S.importResult = null; } S.edit = null; S.busy = false; goLibrary(); }
+    catch (e) { S.busy = false; S.editErr = hErr(e); render(); } },
   openGame(el) { S.detail = S.games.find(x => x.id === el.dataset.id); S.view = 'detail'; render(); },
   async delGame(el) { const id = el.dataset.id; if (S.confirm !== 'g:' + id) { S.confirm = 'g:' + id; render(); return; } S.confirm = null;
     try {
@@ -367,7 +539,9 @@ const A = {
       if (live.exists()) { const ps = await getDocs(collection(db, 'games', id, 'players')); for (const d of ps.docs) await deleteDoc(d.ref); await deleteDoc(gameRef(id)); }
       await Priv.deleteGame(id); S.games = S.games.filter(g => g.id !== id);
     } catch (e) { toast(hErr(e)); } render(); },
-  csv() { if (S.view === 'detail') downloadCSV(S.detail.title, S.detail.questions, S.detail.results); else if (H && H.game) downloadCSV(H.title, H.questions, H.game.results); },
+  csv() { const c = exportCtx(); if (c) downloadCSV(c); },
+  pdf(el) { const c = exportCtx(); if (c) downloadPDF(c, el); },
+  iaf() { const c = exportCtx(); if (c) downloadIAF(c); },
   toggleSound() { sound.on = !sound.on; if (H) H.lastKey = null; renderHost(); },
   hStart() { beep(660, .1); startQuestion(0); },
   hReveal() { reveal(); },
@@ -380,8 +554,14 @@ const A = {
   hExit() { stopHosting(); goLibrary(); }
 };
 document.addEventListener('click', ev => { const el = ev.target.closest('[data-act]'); if (!el || el.disabled) return; const f = A[el.dataset.act]; if (f) { ev.preventDefault(); f(el, ev); } });
-document.addEventListener('input', ev => { const t = ev.target; if (t.dataset.bind) S[t.dataset.bind] = t.value; });
+document.addEventListener('input', ev => { const t = ev.target; if (t.dataset.bind) S[t.dataset.bind] = t.value;
+  const ed = t.dataset.ed; if (ed && S.edit) { const i = +t.dataset.i, j = +t.dataset.j;
+    if (ed === 'title') S.edit.title = t.value; else if (ed === 'text') S.edit.questions[i].text = t.value;
+    else if (ed === 'choice') S.edit.questions[i].choices[j] = t.value; else if (ed === 'time') S.edit.questions[i].time = t.value; } });
 document.addEventListener('change', ev => { const t = ev.target;
+  if (t.dataset.ed === 'correct' && S.edit) S.edit.questions[+t.dataset.i].correct = +t.dataset.j;
+  if (t.dataset.ed === 'time' && S.edit) { let v = parseInt(t.value, 10); if (!Number.isFinite(v)) v = 20; v = Math.max(5, Math.min(120, v)); t.value = v; S.edit.questions[+t.dataset.i].time = v; }
+  if (t.dataset.opt && S.setup) S.setup[t.dataset.opt] = t.checked;
   if (t.dataset.actChange === 'xmlFile' && t.files && t.files[0]) { const f = t.files[0]; if (f.size > 2e6) { toast('That file is too big for a quiz.'); return; }
     f.text().then(txt => { S.importText = txt; S.importResult = parseXML(txt); render(); }); } });
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && S.modal) { S.modal = null; render(); }
